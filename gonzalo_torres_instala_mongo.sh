@@ -112,12 +112,28 @@ security:
 MONGOD_CONF
 ) > /etc/mongod.conf
 
-# Reiniciar el servicio de mongod para aplicar la nueva configuracion
-
+# Comprobacion activa del arranque de MongoDB (elimina espera fija)
 systemctl restart mongod
 
 logger "Esperando a que mongod responda..."
-sleep 15
+
+INTENTOS=0
+MAX_INTENTOS=10
+
+until mongo admin --eval "db.runCommand({ ping: 1 })" >/dev/null 2>&1
+do
+    sleep 2
+    INTENTOS=$((INTENTOS+1))
+
+    if [ "${INTENTOS}" -ge "${MAX_INTENTOS}" ]
+    then
+        logger "MongoDB no responde tras ${MAX_INTENTOS} intentos"
+        exit 1
+    fi
+done
+
+logger "MongoDB responde correctamente"
+
 
 # Crear usuario con la password proporcionada como parametro
 
@@ -136,4 +152,5 @@ CREACION_DE_USUARIO
 
 logger "El usuario ${USUARIO} ha sido creado con exito!"
 
-exit -1
+# Finalizacion correcta del script
+exit 0
