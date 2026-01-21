@@ -5,11 +5,9 @@ set -e
 logger "Arrancando instalacion y configuracion de MongoDB"
 USO="Uso : install.sh [opciones]
 Ejemplo:
-install.sh -u administrador -p password [-n 27017]
+install.sh -f config.ini
 Opciones:
--u usuario
--p password
--n numero de puerto (opcional)
+-f fichero de configuracion (config.ini)
 -a muestra esta ayuda
 "
 function ayuda() {
@@ -20,33 +18,48 @@ echo ${1}
 fi
 }
 
-# Gestionar los argumentos
-while getopts ":u:p:n:a" OPCION
+# Gestionar los argumentos (nuevo: -f config.ini)
+while getopts ":f:a" OPCION
 do
 case ${OPCION} in
-u ) USUARIO=$OPTARG
-echo "Parametro USUARIO establecido con '${USUARIO}'";;
-p ) PASSWORD=$OPTARG
-echo "Parametro PASSWORD establecido";;
-n ) PUERTO_MONGOD=$OPTARG
-echo "Parametro PUERTO_MONGOD establecido con '${PUERTO_MONGOD}'";;
+f ) CONFIG_FILE=$OPTARG
+echo "Parametro CONFIG_FILE establecido con '${CONFIG_FILE}'";;
 a ) ayuda; exit 0;;
-: ) ayuda "Falta el parametro para -$OPTARG"; exit 1;; \?) ayuda "La
-opcion no existe : $OPTARG"; exit 1;;
+: ) ayuda "Falta el parametro para -$OPTARG"; exit 1;;
+\?) ayuda "La opcion no existe : $OPTARG"; exit 1;;
 esac
 done
-if [ -z ${USUARIO} ]
+
+if [ -z "${CONFIG_FILE}" ]
 then
-ayuda "El usuario (-u) debe ser especificado"; exit 1
+ayuda "El fichero de configuracion (-f) debe ser especificado"; exit 1
 fi
-if [ -z ${PASSWORD} ]
+
+if [ ! -f "${CONFIG_FILE}" ]
 then
-ayuda "La password (-p) debe ser especificada"; exit 1
+ayuda "No existe el fichero de configuracion: ${CONFIG_FILE}"; exit 1
 fi
-if [ -z ${PUERTO_MONGOD} ]
+
+# Leer valores desde config.ini (formato: key=value)
+USUARIO=$(grep -E '^user=' "${CONFIG_FILE}" | head -n 1 | cut -d'=' -f2-)
+PASSWORD=$(grep -E '^password=' "${CONFIG_FILE}" | head -n 1 | cut -d'=' -f2-)
+PUERTO_MONGOD=$(grep -E '^port=' "${CONFIG_FILE}" | head -n 1 | cut -d'=' -f2-)
+
+if [ -z "${USUARIO}" ]
+then
+ayuda "El campo user debe ser especificado en ${CONFIG_FILE}"; exit 1
+fi
+
+if [ -z "${PASSWORD}" ]
+then
+ayuda "El campo password debe ser especificado en ${CONFIG_FILE}"; exit 1
+fi
+
+if [ -z "${PUERTO_MONGOD}" ]
 then
 PUERTO_MONGOD=27017
 fi
+
 # Preparar el repositorio (apt-get) de mongodb añadir su clave apt
 
 apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 4B7C549A058F8B6B
