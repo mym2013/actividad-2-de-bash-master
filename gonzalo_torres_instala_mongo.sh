@@ -1,10 +1,14 @@
 #!/bin/bash
 #
-# Script adaptado a partir del original:
-# - Parametrizacion mediante archivo config.ini (-f)
-# - Eliminacion de espera pasiva (sleep) por comprobacion activa
-# - Control de errores y codigos de salida estandar
-# - Separacion entre logica del script y datos de configuracion
+# Script adaptado a partir del original del profesor
+# Asignatura: Administracion de Sistemas de la Cloud
+#
+# Cambios realizados:
+# - Parametrizacion mediante archivo config.ini usando la opcion -f
+# - Eliminacion de espera pasiva (sleep 15) por comprobacion activa del servicio
+# - Control de errores mediante set -e y codigos de salida estandar
+# - Separacion entre la logica del script y los datos de configuracion
+# - Flujo correcto de creacion de usuario MongoDB con authorization habilitado
 #
 
 
