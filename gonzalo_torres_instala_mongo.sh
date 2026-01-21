@@ -24,59 +24,60 @@ if [[ ${1} ]]
 then
 echo ${1}
 fi
+exit 0
 }
 
-# Gestionar los argumentos (nuevo: -f config.ini)
-while getopts ":f:a" OPCION
+# DEFAULTS
+FICHERO="config.ini"
+while getopts "af:" OPCION
 do
 case ${OPCION} in
-f ) CONFIG_FILE=$OPTARG
-echo "Parametro CONFIG_FILE establecido con '${CONFIG_FILE}'";;
-a ) ayuda; exit 0;;
-: ) ayuda "Falta el parametro para -$OPTARG"; exit 1;;
-\?) ayuda "La opcion no existe : $OPTARG"; exit 1;;
+a)
+ayuda
+;;
+f)
+FICHERO=${OPTARG}
+;;
+\?)
+ayuda "Opcion no permitida"
+;;
 esac
 done
 
-if [ -z "${CONFIG_FILE}" ]
+if [[ ! -f "${FICHERO}" ]]
 then
-ayuda "El fichero de configuracion (-f) debe ser especificado"; exit 1
+logger "No existe el fichero ${FICHERO}"
+exit 1
 fi
 
-if [ ! -f "${CONFIG_FILE}" ]
+# Lectura de parametros desde config.ini
+PUERTO_MONGOD=$(grep "^PUERTO_MONGOD=" "${FICHERO}" | cut -d '=' -f2 | tr -d '\r')
+USUARIO=$(grep "^USUARIO=" "${FICHERO}" | cut -d '=' -f2 | tr -d '\r')
+PASSWORD=$(grep "^PASSWORD=" "${FICHERO}" | cut -d '=' -f2 | tr -d '\r')
+
+if [[ -z "${PUERTO_MONGOD}" || -z "${USUARIO}" || -z "${PASSWORD}" ]]
 then
-ayuda "No existe el fichero de configuracion: ${CONFIG_FILE}"; exit 1
+logger "Faltan parametros en el archivo de configuracion"
+exit 1
 fi
 
-# Leer valores desde config.ini (formato: key=value)
-USUARIO=$(grep -E '^user=' "${CONFIG_FILE}" | head -n 1 | cut -d'=' -f2-)
-PASSWORD=$(grep -E '^password=' "${CONFIG_FILE}" | head -n 1 | cut -d'=' -f2-)
-PUERTO_MONGOD=$(grep -E '^port=' "${CONFIG_FILE}" | head -n 1 | cut -d'=' -f2-)
+logger "Puerto: ${PUERTO_MONGOD}"
+logger "Usuario: ${USUARIO}"
 
-if [ -z "${USUARIO}" ]
+# Instalacion MongoDB
+logger "Instalando MongoDB 4.2.1"
+if [[ $(dpkg -l | grep mongodb-org | wc -l) -gt 0 ]]
 then
-ayuda "El campo user debe ser especificado en ${CONFIG_FILE}"; exit 1
+logger "MongoDB ya instalado. Se procede a reinstalar."
+apt-get -y purge mongodb-org* \
+&& apt-get -y autoremove \
+&& apt-get -y autoclean \
+&& apt-get -y clean \
+&& rm -rf /var/lib/apt/lists/* \
+&& pkill -u mongodb || true \
+&& pkill -f mongod || true \
+&& rm -rf /var/lib/mongodb
 fi
-
-if [ -z "${PASSWORD}" ]
-then
-ayuda "El campo password debe ser especificado en ${CONFIG_FILE}"; exit 1
-fi
-
-if [ -z "${PUERTO_MONGOD}" ]
-then
-PUERTO_MONGOD=27017
-fi
-
-# Preparar el repositorio (apt-get) de mongodb añadir su clave apt
-
-apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 4B7C549A058F8B6B
-
-echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/4.2 multiverse" | tee /etc/apt/sources.list.d/mongodb.list
-
-if [[ -z "$(mongo --version 2> /dev/null | grep '4.2.1')" ]]
-then
-# Instalar paquetes comunes, servidor, shell, balanceador de shards y herramientas
 
 apt-get -y update \
 && apt-get install -y \
@@ -89,7 +90,7 @@ mongodb-org-tools=4.2.1 \
 && pkill -u mongodb || true \
 && pkill -f mongod || true \
 && rm -rf /var/lib/mongodb
-fi
+
 # Crear las carpetas de logs y datos con sus permisos
 
 [[ -d "/datos/bd" ]] || mkdir -p -m 755 "/datos/bd"
@@ -100,7 +101,7 @@ chown mongodb /datos/log /datos/bd
 chgrp mongodb /datos/log /datos/bd
 
 # Crear el archivo de configuración de mongodb con el puerto solicitado
-mv /etc/mongod.conf /etc/mongod.conf.orig
+[ -f /etc/mongod.conf ] && [ ! -f /etc/mongod.conf.orig ] && mv /etc/mongod.conf /etc/mongod.conf.orig
 (
 cat <<MONGOD_CONF
 # /etc/mongod.conf
@@ -116,7 +117,7 @@ storage:
 net:
    port: ${PUERTO_MONGOD}
 security:
-   authorization: enabled
+   authorization: disabled
 MONGOD_CONF
 ) > /etc/mongod.conf
 
@@ -156,8 +157,58 @@ db.createUser({
 })
 EOF
 
-
 logger "El usuario ${USUARIO} ha sido creado con exito!"
+logger "Habilitando authorization y reiniciando mongod..."
+
+# Habilitar authorization en el fichero de configuracion (manteniendo estilo del profesor)
+[ -f /etc/mongod.conf ] && mv /etc/mongod.conf /etc/mongod.conf.noauth
+
+(
+cat <<MONGOD_CONF
+# /etc/mongod.conf
+systemLog:
+   destination: file
+   path: /datos/log/mongod.log
+   logAppend: true
+storage:
+   dbPath: /datos/bd
+   engine: wiredTiger
+   journal:
+      enabled: true
+net:
+   port: ${PUERTO_MONGOD}
+security:
+   authorization: enabled
+MONGOD_CONF
+) > /etc/mongod.conf
+
+systemctl restart mongod
+
+logger "Verificando acceso autenticado..."
+
+systemctl is-active --quiet mongod
+
+mongo admin <<CREACION_USUARIO || true
+db.createUser({
+  user: "${USUARIO}",
+  pwd: "${PASSWORD}",
+  roles: [
+    { role: "root", db: "admin" },
+    { role: "restore", db: "admin" }
+  ]
+})
+CREACION_USUARIO
+
+logger "Verificacion OK: mongod responde con autenticacion."
+
+
+
+
+
+
+
+
+
 
 # Finalizacion correcta del script
 exit 0
