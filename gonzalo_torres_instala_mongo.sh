@@ -1,4 +1,12 @@
 #!/bin/bash
+#
+# Script adaptado a partir del original:
+# - Parametrizacion mediante archivo config.ini (-f)
+# - Eliminacion de espera pasiva (sleep) por comprobacion activa
+# - Control de errores y codigos de salida estandar
+# - Separacion entre logica del script y datos de configuracion
+#
+
 
 set -e
 
@@ -137,18 +145,17 @@ logger "MongoDB responde correctamente"
 
 # Crear usuario con la password proporcionada como parametro
 
-mongo admin << CREACION_DE_USUARIO
+mongo admin <<EOF
 db.createUser({
-    user: "${USUARIO}",
-    pwd: "${PASSWORD}",
-    roles:[{
-        role: "root",
-        db: "admin"
-    },{
-        role: "restore",
-        db: "admin"
-}] })
-CREACION_DE_USUARIO
+  user: "${USUARIO}",
+  pwd: "${PASSWORD}",
+  roles: [
+    { role: "root", db: "admin" },
+    { role: "restore", db: "admin" }
+  ]
+})
+EOF
+
 
 logger "El usuario ${USUARIO} ha sido creado con exito!"
 
